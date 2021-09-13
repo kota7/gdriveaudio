@@ -154,13 +154,9 @@ def _play_one(id, name, tmpdir):
             status, done = downloader.next_chunk()
             print("Download %d%%." % int(status.progress() * 100))
     
-    # test on remote
-    envs = os.environ.copy()
-    print(envs.get("DISPLAY"))
-    if "DISPLAY" not in envs:
-        envs["DISPLAY"] = ":0"
-    subprocess.run(["ffplay", filepath, "-autoexit"], env=envs)
-
+    command = ["ffplay", filepath, "-autoexit", "-nodisp"]
+    p = subprocess.run(command, stdin=subprocess.PIPE)
+    
 
 def main():
     parser = ArgumentParser(description="Play music files in google drive")
