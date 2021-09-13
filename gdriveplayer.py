@@ -153,7 +153,13 @@ def _play_one(id, name, tmpdir):
         while done is False:
             status, done = downloader.next_chunk()
             print("Download %d%%." % int(status.progress() * 100))
-    subprocess.run(["ffplay", filepath, "-autoexit"])
+    
+    # test on remote
+    envs = os.environ.copy()
+    print(envs.get("DISPLAY"))
+    if "DISPLAY" not in envs:
+        envs["DISPLAY"] = ":0"
+    subprocess.run(["ffplay", filepath, "-autoexit"], env=envs)
 
 
 def main():
