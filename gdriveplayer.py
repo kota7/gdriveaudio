@@ -26,9 +26,13 @@ def create_api_service():
     jsonfile = _credentialjson
     #creds = ServiceAccountCredentials.from_json_keyfile_name(jsonfile)
     if os.path.isfile(jsonfile):
+        # local json file
         creds = Credentials.from_service_account_file(jsonfile)
     else:
-        creds = Credentials()
+        # gce 
+        from google.auth import compute_engine
+        creds = compute_engine.Credentials()
+        #creds = Credentials()
     service = build('drive', 'v3', credentials=creds)
     return service
 
