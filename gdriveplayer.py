@@ -155,7 +155,7 @@ def _play_one(id, name):
         
         #command = ["ffplay", filepath, "-autoexit", "-nodisp"]
         #p = subprocess.run(command, stdin=subprocess.PIPE)
-        command = ["mplayer", filepath]
+        command = ["mplayer", "-vo", "null", filepath]
         p = subprocess.run(command)
     
 
