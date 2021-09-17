@@ -14,7 +14,7 @@ from google.oauth2.service_account import Credentials
 
 logger = getLogger(__name__)
 
-_dirname = os.path.abspath(os.path.dirname(__file__))
+_dirname = os.path.abspath(os.getcwd())
 _credentialjson = os.path.join(_dirname, "_credentials.json")
 _dbfile = os.path.join(_dirname, "_gdriveplayer.db")
 
