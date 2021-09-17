@@ -1,5 +1,6 @@
 google-drive-player
 ===================
+[![](https://badge.fury.io/py/gdriveaudio.svg)](https://badge.fury.io/py/gdriveaudio)
 
 Play audio files in the google drive.
 
@@ -24,9 +25,9 @@ Play audio files in the google drive.
 - Log in to the google cloud console and create or choose the project to use.
 - Go to [IAM & Admin > Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts).
 - Click "CREATE SERVICE ACCOUNT".
-- Type in an arbitrary service account name (e.g. `gdriveplayer-sa`).
+- Type in an arbitrary service account name (e.g. `gdriveaudio-sa`).
 - Click "DONE".
-- Note the email address of the service account name (e.g.` gdriveplayer-sa@gdriveplayer-project.iam.gserviceaccount.com`)
+- Note the email address of the service account name (e.g.` gdriveaudio-sa@gdriveaudio-project.iam.gserviceaccount.com`)
 
 ### Give the service account the access to the music folder
 
@@ -50,11 +51,11 @@ Play audio files in the google drive.
 
 ```shell
 # from pypi
-$ pip3 install gdriveplayer
+$ pip3 install gdriveaudio
 
 # from github
-$ git clone --depth=1 https://github.com/kota7/gdriveplayer.git
-$ pip3 install -U ./gdriveplayer
+$ git clone --depth=1 https://github.com/kota7/gdriveaudio.git
+$ pip3 install -U ./gdriveaudio
 ```
 
 ## Start playing
@@ -64,10 +65,10 @@ $ pip3 install -U ./gdriveplayer
 
 # At the first run, database file "_gdriveplayer.db" is automatically created
 # then audio files are played in a random order
-$ griveplayer
+$ gdriveaudio
 
 # To update the file list before playing
-$ griveplayer -U
+$ gdriveaudio -U
 ```
 
 The audio player can be controled by key strokes (See full description at `man mplayer`):
