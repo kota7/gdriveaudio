@@ -15,7 +15,7 @@ from google.oauth2.service_account import Credentials
 logger = getLogger(__name__)
 
 _dirname = os.path.abspath(os.path.dirname(__file__))
-_credentialjson = os.path.join(_dirname, "gdriveplayer-credentials.json")
+_credentialjson = os.path.join(_dirname, "_credentials.json")
 _dbfile = os.path.join(_dirname, "_gdriveplayer.db")
 
 
@@ -28,12 +28,10 @@ def create_api_service():
     if os.path.isfile(jsonfile):
         # local json file
         creds = Credentials.from_service_account_file(jsonfile)
+        service = build('drive', 'v3', credentials=creds)
     else:
-        # gce 
-        from google.auth import compute_engine
-        creds = compute_engine.Credentials()
-        #creds = Credentials()
-    service = build('drive', 'v3', credentials=creds)
+        service = build('drive', 'v3')
+    
     return service
 
 def _get_sql(query):
@@ -140,7 +138,10 @@ def play():
     #print(ids)
     with TemporaryDirectory() as tmpdir:
         for (id, name) in files:
-            _play_one(id, name, tmpdir)
+            try:
+                _play_one(id, name, tmpdir)
+            except Exception as e:
+                logger.warning("Failed to play '%s' (%s) due to the error:\n%s", name, id, e)
 
 def _play_one(id, name, tmpdir):
     # download file
@@ -154,13 +155,15 @@ def _play_one(id, name, tmpdir):
             status, done = downloader.next_chunk()
             print("Download %d%%." % int(status.progress() * 100))
     
-    command = ["ffplay", filepath, "-autoexit", "-nodisp"]
-    p = subprocess.run(command, stdin=subprocess.PIPE)
+    #command = ["ffplay", filepath, "-autoexit", "-nodisp"]
+    #p = subprocess.run(command, stdin=subprocess.PIPE)
+    command = ["mplayer", filepath]
+    p = subprocess.run(command)
     
 
 def main():
     parser = ArgumentParser(description="Play music files in google drive")
-    parser.add_argument("--update-list", action="store_true")
+    parser.add_argument("-U", "--update-list", action="store_true", help="Update file list")
 
     args = parser.parse_args()
 
