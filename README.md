@@ -1,4 +1,4 @@
-google-drive-player
+gdriveaudio
 ===================
 [![](https://badge.fury.io/py/gdriveaudio.svg)](https://badge.fury.io/py/gdriveaudio)
 
@@ -34,8 +34,8 @@ Play audio files in the google drive.
 - Open [Google Drive](https://drive.google.com/).
 - Open the folder that contains music files.
 - Click the folder name and choose "Share"
-- Paste the email address of the service account noted in the previous step
-- Click "Done"
+- Paste the email address of the service account noted in the previous step.
+- Click "Done".
 
 ### Create the credentials file of the service account
 
