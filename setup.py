@@ -9,7 +9,7 @@ with open(readmefile) as f:
 
 setup(
     name='gdriveaudio',
-    version='0.1.3',
+    version='0.1.4',
     description='Play music files on Google Drive',
     author='Kota Mori', 
     author_email='kmori05@gmail.com',
@@ -19,6 +19,6 @@ setup(
     
     packages=[],
     py_modules=['gdriveaudio'],
-    install_requires=['tqdm', 'google-api-python-client', 'google-auth-httplib2', 'google-auth-oauthlib'],
+    install_requires=['chardet', 'tqdm', 'google-api-python-client', 'google-auth-httplib2', 'google-auth-oauthlib'],
     entry_points={'console_scripts': ['gdriveaudio=gdriveaudio:main']},
 )
