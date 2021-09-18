@@ -33,6 +33,9 @@ AudioFile = namedtuple("AudioFile", "id name mimetype parent size md5checksum")
 AudioMeta = namedtuple("AudioMeta", "id title artist album album_artist date year genre duration")
 Folder    = namedtuple("Folder",    "id name parent fullpath")
 
+def _initialized()-> bool:
+    return os.path.isfile(config.dbfile)
+
 def _get_sql(query: str, header: bool=False):
     with sqlite3.connect(config.dbfile) as conn:
         c = conn.cursor()
@@ -326,6 +329,9 @@ def init_database():
 
 
 def play_audio(filter: str=None, repeat: bool=False):
+    if not _initialized():
+        print("Database not initialized. Run 'gdriveaudio update -U' first")
+        return
     q = "SELECT id, name, prefix FROM audio"
     if filter is not None:
         q += " WHERE {}".format(filter)
@@ -366,7 +372,7 @@ def show_data(n: int=None, filter: str=None):
         writer.writerow(row)
 
 def update_audio_data(files: bool=False, meta: bool=False, replace_meta: bool=False, folders: bool=False):
-    if not os.path.isfile(config.dbfile):
+    if not _initialized():
         print("Initializing database")
         init_database()
     if files:
@@ -420,12 +426,12 @@ def main():
     
     parent_parser = ArgumentParser(add_help=False)
     parent_parser.add_argument("-c", "--credential-json", type=str, default="_credentials.json",
-                        help="Path to the google cloud credential JSON file with google drive permission")
+                               help="Path to the google cloud credential JSON file with google drive permission")
     parent_parser.add_argument("-d", "--database-file", type=str, default="_gdriveplayer.db",
-                        help="Path to the sqlite database file")
+                               help="Path to the sqlite database file")
     
     init = subparsers.add_parser("init", parents=[parent_parser],
-                                 help="Initialize database (all existing data are delted)")
+                                 help="Initialize database (all existing data will be deleted)")
      
     update = subparsers.add_parser("update", help="Update data", parents=[parent_parser])
     update.add_argument("-U", "--update-filelist", action="store_true", help="Update file list")
@@ -450,7 +456,7 @@ def main():
         init_database()
     elif args.command == "update":
         update_audio_data(files=args.update_filelist, meta=args.update_meta,
-                        replace_meta=args.replace_meta, folders=args.update_folders)
+                          replace_meta=args.replace_meta, folders=args.update_folders)
     elif args.command == "play":
         play_audio(filter=args.filter_query, repeat=args.repeat)
     elif args.command == "data":
