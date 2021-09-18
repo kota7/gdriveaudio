@@ -378,12 +378,12 @@ def update_audio_data(files: bool=False, meta: bool=False, replace_meta: bool=Fa
     if files:
         print("Updating audio file list")
         _update_audiofiles()
-    if meta:
-        print("Updating audio meta data")
-        _update_audiometa(replace=replace_meta)
     if folders:
         print("Updating the folder structure")
         _update_folders()
+    if meta:
+        print("Updating audio meta data")
+        _update_audiometa(replace=replace_meta)
 
 def _update_audiofiles():
     _exec_sql("DELETE FROM audiofiles")
