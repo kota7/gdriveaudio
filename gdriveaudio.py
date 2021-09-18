@@ -265,8 +265,8 @@ def _generate_audiometa_data(ids: list, names: list):
                 return None
             meta = _get_audiometa(filepath)
             meta = AudioMeta(id=id, **meta)
-            os.unlink(filepath)
-            print(meta)
+            #os.unlink(filepath)
+            #print(meta)
             return meta
 
     with ThreadPoolExecutor() as t:
