@@ -74,7 +74,7 @@ $ gdriveaudio init
 #   -M for updating audio metadata (this can take hours)
 $ gdriveaudio update -UF
 # or
-$ gdriveaudio update -UMF
+$ gdriveaudio update -UFM
 
 # Play all files
 $ gdriveaudio play 
