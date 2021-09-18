@@ -186,6 +186,25 @@ def _add_fullpath(folders: list, sep="/"):
     for id in out: _fullpath(id)
     # convert back to a list of dict
     return [v for _, v in out.items()]
+
+def _generate_audiometa_data(ids: list, names: list):
+    def _task(id, name):
+        with TemporaryDirectory() as tmpdir:
+            try:
+                filepath = _fetch_file(id, name, tmpdir)
+            except Exception as e:
+                warnings.warn("Failed to fetch file '%s' '%s' due to error '%s'" % (id, name, e))
+                return None
+            meta = _get_audiometa(filepath)
+            meta = AudioMeta(id=id, **meta)
+            #os.unlink(filepath)
+            #print(meta)
+            return meta
+
+    with ThreadPoolExecutor() as t:
+        for meta in t.map(_task, ids, names):
+            if meta is None: continue
+            yield meta
 # ***   END OF GOOGLE DRIVE HELPERS   ************************************************ #
 
 
@@ -254,25 +273,6 @@ def _get_audiometa(filepath: str)-> dict:
 def _play_audiofile(filepath: str):
     command = ["mplayer", "-vo", "null", filepath]
     p = subprocess.run(command)
-
-def _generate_audiometa_data(ids: list, names: list):
-    def _task(id, name):
-        with TemporaryDirectory() as tmpdir:
-            try:
-                filepath = _fetch_file(id, name, tmpdir)
-            except Exception as e:
-                warnings.warn("Failed to fetch file '%s' '%s' due to error '%s'" % (id, name, e))
-                return None
-            meta = _get_audiometa(filepath)
-            meta = AudioMeta(id=id, **meta)
-            #os.unlink(filepath)
-            #print(meta)
-            return meta
-
-    with ThreadPoolExecutor() as t:
-        for meta in t.map(_task, ids, names):
-            if meta is None: continue
-            yield meta
 # ***   END OF PLAYER HELPERS   ******************************************************* #
 
 
