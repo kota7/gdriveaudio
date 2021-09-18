@@ -29,6 +29,7 @@ class config:
 # ***   DATABASE HELPERS ************************************************************ #
 AudioFile = namedtuple("AudioFile", "id name mimetype parent size md5checksum")
 AudioMeta = namedtuple("AudioMeta", "id title artist album album_artist date year genre duration")
+Folder    = namedtuple("Folder",    "id name parent fullpath")
 
 def _get_sql(query: str):
     with sqlite3.connect(config.dbfile) as conn:
@@ -112,7 +113,7 @@ def search_audio_files():
         if page_token is None:
             break
 
-def search_folders():
+def search_folders()-> list:
     service = _create_api_service()
 
     page_token = None
@@ -126,10 +127,10 @@ def search_folders():
             pageToken=page_token
         ).execute()
         folders += response.get('files', [])
-
         page_token = response.get('nextPageToken', None)
         if page_token is None:
             break
+
     # check that parents is a list of length 1 and extract the element
     for f in folders:
         p = f.get("parents", [])
@@ -137,10 +138,40 @@ def search_folders():
         parent = None if len(p)==0 else p[0]
         if "parents" in f: del f["parents"] 
         f["parent"] = parent
+    folders = _add_fullpath(folders)
+    folders = [Folder(**f) for f in folders]
     return folders
 
-def make_fullpath(folders: dict):
-    pass
+def _add_fullpath(folders: list, sep="/"):
+    # folders is a list of dict(id, name, parent)
+    
+    # convert to a dict with id as the key
+    # and initialize fullpath field as None
+    # i.e. id --> dict(id, name, parent, fullpath)
+    # this way, finding an entry by id is faster
+    out = {}
+    for item in folders:
+        tmp = item.copy()
+        tmp["fullpath"] = None
+        out[item["id"]] = tmp
+
+    # recursive function to update fullpath of a specific id
+    def _fullpath(id):
+        # avoid computing if this id has already been calculated
+        if out[id]["fullpath"] is not None:
+            return out[id]["fullpath"]
+        if out[id]["parent"] not in out:
+            # this id has no parent in the list
+            # so this is a top folder, i.e. fullpath = name
+            out[id]["fullpath"] = out[id]["name"]
+            return out[id]["fullpath"]
+        out[id]["fullpath"] = _fullpath(out[id]["parent"]) + sep + out[id]["name"]
+        return out[id]["fullpath"]
+
+    # make sure we calculate fullpath for all ids
+    for id in out: _fullpath(id)
+    # convert back to a list of dict
+    return [v for _, v in out.items()]
 # ***   END OF GOOGLE DRIVE HELPERS   ************************************************ #
 
 
@@ -279,10 +310,12 @@ def init_database():
     _exec_sql("""
     CREATE VIEW IF NOT EXISTS audio AS
     SELECT
-      a.*, m.*, f.name AS folder, f.fullpath AS prefix
+      a.*,
+      f.name AS folder, f.fullpath AS prefix,
+      m.title, m.artist, m.album_artist, m.date, m.year, m.duration
     FROM
       audiofiles AS a
-      LEFT JOIN audiometa AS m USING (id)
+      LEFT JOIN audiometa AS m ON a.id = m.id
       LEFT JOIN folders   AS f ON a.parent = f.id
     """)
 
@@ -301,7 +334,7 @@ def play(filter: str=None):
                 warnings.warn("Failed to play '%s' (%s) due to the error:\n%s" % (name, id, e))
 
 
-def update_audio_data(files: bool=False, meta: bool=False, replace_meta: bool=False):
+def update_audio_data(files: bool=False, meta: bool=False, replace_meta: bool=False, folders: bool=False):
     if not os.path.isfile(config.dbfile):
         print("Initializing database")
         init_database()
@@ -311,6 +344,9 @@ def update_audio_data(files: bool=False, meta: bool=False, replace_meta: bool=Fa
     if meta:
         print("Updating audio meta data")
         _update_audiometa(replace=replace_meta)
+    if folders:
+        print("Updating the folder structure")
+        _update_folders()
 
 
 def _update_audiofiles():
@@ -342,11 +378,18 @@ def _update_audiometa_one(id: str, filepath: str):
     _exec_sql(q, value=meta)
 
 
+def _update_folders():
+    _exec_sql("DELETE FROM folders")
+    placeholder = ",".join("?" * len(Folder._fields))
+    q = "INSERT INTO folders VALUES ({})".format(placeholder)
+    _exec_sql(q, values=tqdm(search_folders()))
+
+
 def main():
-    #basicConfig(level=20, format="[%(levelname).1s|%(asctime).19s|%(name)s] %(message)s")
     parser = ArgumentParser(description="Play music files in google drive")
     parser.add_argument("-U", "--update-filelist", action="store_true", help="Update file list")
     parser.add_argument("-M", "--update-meta", action="store_true", help="Update audio metadata")
+    parser.add_argument("-F", "--update-folders", action="store_true", help="Update folder structure data")
     parser.add_argument("--replace-meta", action="store_true", help="replace existing metadata")
     parser.add_argument("--init", action="store_true", help="Initialize database")
     parser.add_argument("-c", "--credential-json", type=str, default="_credentials.json",
@@ -360,7 +403,8 @@ def main():
 
     if args.init:
         init_database()
-    update_audio_data(files=args.update_filelist, meta=args.update_meta, replace_meta=args.replace_meta)
+    update_audio_data(files=args.update_filelist, meta=args.update_meta,
+                      replace_meta=args.replace_meta, folders=args.update_folders)
     
     #play()
 # ***   END OF MAIN PROCEDURE   ******************************************************* #
