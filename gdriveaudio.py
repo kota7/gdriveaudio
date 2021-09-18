@@ -3,6 +3,8 @@
 import os
 import re
 import json
+import csv
+import sys
 import sqlite3
 import subprocess
 import warnings
@@ -31,10 +33,12 @@ AudioFile = namedtuple("AudioFile", "id name mimetype parent size md5checksum")
 AudioMeta = namedtuple("AudioMeta", "id title artist album album_artist date year genre duration")
 Folder    = namedtuple("Folder",    "id name parent fullpath")
 
-def _get_sql(query: str):
+def _get_sql(query: str, header: bool=False):
     with sqlite3.connect(config.dbfile) as conn:
         c = conn.cursor()
         c.execute(query)
+        if header:
+            yield [a[0] for a in c.description] # column names
         for row in c:
             yield row
 
@@ -49,6 +53,13 @@ def _exec_sql(query: str, value=None, values=None):
         else:
             c.execute(query)
         conn.commit()
+
+def _validate_sql(query: str, value=None, values=None)-> tuple:
+    try:
+        _exec_sql(query, value=value, values=values)
+        return True, None
+    except Exception as e:
+        return False, e
 # ***   END OF DATABASE HELPERS ***************************************************** #
 
 
@@ -237,13 +248,7 @@ def _get_audiometa(filepath: str)-> dict:
     out["duration"] = _validate_numeric(out["duration"])
     return out
 
-def _play_one(id: str, name: str, tmpdir: str):
-    service = _create_api_service()
-    request = service.files().get_media(fileId=id)
-    filepath = _fetch_file(id, name, tmpdir)
-    
-    #update_audiometa_one(id, filepath)
-    #logger.info("Updated metadata for '%s' '%s'", id, name)
+def _play_audiofile(filepath: str):
     command = ["mplayer", "-vo", "null", filepath]
     p = subprocess.run(command)
 
@@ -311,7 +316,7 @@ def init_database():
     CREATE VIEW IF NOT EXISTS audio AS
     SELECT
       a.*,
-      f.name AS folder, f.fullpath AS prefix,
+      f.name AS folder, f.fullpath || '/' AS prefix,
       m.title, m.artist, m.album_artist, m.date, m.year, m.duration
     FROM
       audiofiles AS a
@@ -320,19 +325,45 @@ def init_database():
     """)
 
 
-def play(filter: str=None):
-    q = "SELECT id, name FROM audio ORDER BY random()"
+def play_audio(filter: str=None, repeat: bool=False):
+    q = "SELECT id, name, prefix FROM audio"
     if filter is not None:
-        q += "WHERE {}".filter
-    files = [(row[0], row[1]) for row in _get_sql(q)]
-    print("Found %d files" % len(files))
-    for (id, name) in files:
-        with TemporaryDirectory() as tmpdir:
-            try:
-                _play_one(id, name, tmpdir)
-            except Exception as e:
-                warnings.warn("Failed to play '%s' (%s) due to the error:\n%s" % (name, id, e))
+        q += " WHERE {}".format(filter)
+    q += " ORDER BY random()"
+    flag, e = _validate_sql(q)
+    if not flag:
+        raise ValueError("Query is invalid:\n'{}'\nError:\n'{}'".format(q, e))
+    while True:
+        files = list(_get_sql(q))
+        print("Found %d files" % len(files))
+        for i, (id, name, prefix) in enumerate(files):
+            with TemporaryDirectory() as tmpdir:
+                try:
+                    service = _create_api_service()
+                    request = service.files().get_media(fileId=id)
+                    filepath = _fetch_file(id, name, tmpdir)
+                    print("***********************************************************")
+                    print("Playing %d/%d: %s (at %s)" % (i+1, len(files), name, prefix))
+                    _play_audiofile(filepath)
+                except Exception as e:
+                    warnings.warn("Failed to play '%s' (%s) due to the error:\n%s" % (name, id, e))
+        if not repeat:
+            print("Finished playing all files")
+            break
 
+def show_data(n: int=None, filter: str=None):
+    q = "SELECT * FROM audio"
+    if filter is not None:
+        q += " WHERE {}".format(filter)
+    if n is not None:
+        q += " LIMIT {}".format(n)
+    flag, e = _validate_sql(q)
+    if not flag:
+        raise ValueError("Query is invalid:\n'{}'\nError:\n'{}'".format(q, e))
+    rows = _get_sql(q, header=True)
+    writer = csv.writer(sys.stdout)
+    for row in rows:
+        writer.writerow(row)
 
 def update_audio_data(files: bool=False, meta: bool=False, replace_meta: bool=False, folders: bool=False):
     if not os.path.isfile(config.dbfile):
@@ -348,13 +379,11 @@ def update_audio_data(files: bool=False, meta: bool=False, replace_meta: bool=Fa
         print("Updating the folder structure")
         _update_folders()
 
-
 def _update_audiofiles():
     _exec_sql("DELETE FROM audiofiles")
     placeholder = ",".join("?" * len(AudioFile._fields))
     q = "INSERT INTO audiofiles VALUES ({})".format(placeholder)
     _exec_sql(q, values=tqdm(search_audio_files()))
-
 
 def _update_audiometa(replace: bool = False):
     if replace:
@@ -387,26 +416,45 @@ def _update_folders():
 
 def main():
     parser = ArgumentParser(description="Play music files in google drive")
-    parser.add_argument("-U", "--update-filelist", action="store_true", help="Update file list")
-    parser.add_argument("-M", "--update-meta", action="store_true", help="Update audio metadata")
-    parser.add_argument("-F", "--update-folders", action="store_true", help="Update folder structure data")
-    parser.add_argument("--replace-meta", action="store_true", help="replace existing metadata")
-    parser.add_argument("--init", action="store_true", help="Initialize database")
-    parser.add_argument("-c", "--credential-json", type=str, default="_credentials.json",
+    subparsers = parser.add_subparsers(dest="command")
+    
+    parent_parser = ArgumentParser(add_help=False)
+    parent_parser.add_argument("-c", "--credential-json", type=str, default="_credentials.json",
                         help="Path to the google cloud credential JSON file with google drive permission")
-    parser.add_argument("-d", "--database-file", type=str, default="_gdriveplayer.db",
+    parent_parser.add_argument("-d", "--database-file", type=str, default="_gdriveplayer.db",
                         help="Path to the sqlite database file")
+    
+    init = subparsers.add_parser("init", parents=[parent_parser],
+                                 help="Initialize database (all existing data are delted)")
+     
+    update = subparsers.add_parser("update", help="Update data", parents=[parent_parser])
+    update.add_argument("-U", "--update-filelist", action="store_true", help="Update file list")
+    update.add_argument("-M", "--update-meta", action="store_true", help="Update audio metadata")
+    update.add_argument("-F", "--update-folders", action="store_true", help="Update folder structure data")
+    update.add_argument("--replace-meta", action="store_true", help="Replace existing metadata")
+
+    play = subparsers.add_parser("play", help="Play audio", parents=[parent_parser])
+    play.add_argument("-q", "--filter-query", type=str, default=None, help="SQL query to select files to play")
+    play.add_argument("--repeat", action="store_true", help="Repeat forever")
+
+    data = subparsers.add_parser("data", help="Show data in csv format", parents=[parent_parser])
+    data.add_argument("-n", type=int, default=None, help="Number of rows to show")
+    data.add_argument("-q", "--filter-query", type=str, default=None, help="SQL query to select files to show")
 
     args = parser.parse_args()
+    #print(args)
     config.credentialjson = os.path.abspath(args.credential_json)
     config.dbfile = os.path.abspath(args.database_file)
 
-    if args.init:
+    if args.command == "init":
         init_database()
-    update_audio_data(files=args.update_filelist, meta=args.update_meta,
-                      replace_meta=args.replace_meta, folders=args.update_folders)
-    
-    #play()
+    elif args.command == "update":
+        update_audio_data(files=args.update_filelist, meta=args.update_meta,
+                        replace_meta=args.replace_meta, folders=args.update_folders)
+    elif args.command == "play":
+        play_audio(filter=args.filter_query, repeat=args.repeat)
+    elif args.command == "data":
+        show_data(n=args.n, filter=args.filter_query)
 # ***   END OF MAIN PROCEDURE   ******************************************************* #
 
 

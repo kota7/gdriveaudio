@@ -7,10 +7,10 @@ Play audio files in the google drive.
 ## Requirments
 
 - Python3
-- MPlayer
-  - Ubuntu: `sudo apt install mplayer`
-  - MacOSX: `brew install mplayer`
-  - Windows: Follow [official instruction](http://www.mplayerhq.hu/design7/dload.html)
+- MPlayer and FFmpeg
+  - Ubuntu: `sudo apt install mplayer ffmpeg`
+  - MacOSX: `brew install mplayer ffmpeg`
+  - Windows: Follow official instructionat [MPlayer](http://www.mplayerhq.hu/design7/dload.html) and [FFmpeg](https://ffmpeg.org/download.html)
 - Google account, access to the google cloud platform
 
 ## Set up with Google cloud
@@ -60,15 +60,30 @@ $ pip3 install -U ./gdriveaudio
 
 ## Start playing
 
+Run the commands in the folder that has the "_credentials.json":
+
 ```shell
-# Run in the folder that has the "_credentials.json"
+# Initialize data
+#   Delete pre-fetched data
+#   Create SQLite database file '_gdriveaudio.db'
+$ gdriveaudio init
 
-# At the first run, database file "_gdriveplayer.db" is automatically created
-# then audio files are played in a random order
-$ gdriveaudio
+# Update data
+#   -U for updating file list
+#   -F for updating folder structure information
+#   -M for updating audio metadata (this can take hours)
+$ gdriveaudio update -UF
+# or
+$ gdriveaudio update -UMF
 
-# To update the file list before playing
-$ gdriveaudio -U
+# Play all files
+$ gdriveaudio play 
+# Play files with some condition
+#   -q: takes 'WHERE' condition for SQLite
+$ gdriveaudio play -q "lower(prefix) like '%beethoven%'"
+
+# Show data
+$ gdriveaudio data -n 5 -q "lower(prefix) like '%jason%'"
 ```
 
 The audio player can be controled by key strokes (See full description at `man mplayer`):
