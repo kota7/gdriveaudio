@@ -27,13 +27,13 @@ Play audio files in the google drive.
 - Click "CREATE SERVICE ACCOUNT".
 - Type in an arbitrary service account name (e.g. `gdriveaudio-sa`).
 - Click "DONE".
-- Note the email address of the service account name (e.g.` gdriveaudio-sa@gdriveaudio-project.iam.gserviceaccount.com`)
+- Note the email address of the service account name (e.g.` gdriveaudio-sa@gdriveaudio-project.iam.gserviceaccount.com`).
 
 ### Give the service account the access to the music folder
 
 - Open [Google Drive](https://drive.google.com/).
 - Open the folder that contains music files.
-- Click the folder name and choose "Share"
+- Click the folder name and choose "Share".
 - Paste the email address of the service account noted in the previous step.
 - Click "Done".
 
