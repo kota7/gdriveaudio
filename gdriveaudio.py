@@ -19,21 +19,42 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2.service_account import Credentials
 
-#logger = getLogger(__name__)
 
-
+# ***   CONFIGURATION   ********************************************************** #
 class config:
-    credentialjson = os.path.join(os.getcwd(), "_credentials.json")
-    dbfile = os.path.join(os.getcwd(), "_gdriveplayer.db")
-    encoding = "utf8"
-    chardet_threshold = 0.95
+    credentialjson: str = None
+    dbfile: str = None
+    encoding: str = "utf8"
+    chardet_threshold: float = 0.95
 
-# ***   DATABASE HELPERS ************************************************************ #
+def _set_default_config():
+    # 1. Use GDRIVEAUDIO_DIRECTORY env variable as the project root
+    # 2. If 1 is not available, use currenct working directory as the project root
+    workdir = os.environ.get("GDRIVEAUDIO_DIRECTORY", os.getcwd())
+    if os.path.isdir(workdir):
+        # use this directory as the working directory for this tool
+        config.credentialjson = os.path.join(workdir, "_credentials.json")
+        config.dbfile         = os.path.join(workdir, "_gdriveaudio.db")
+    config.encoding = "utf8"
+    config.chardet_threshold = 0.95
+
+_set_default_config()
+
+def _set_config(**kwargs):
+    for key, value in kwargs.items():
+        if not hasattr(config, key):
+            print("'%' is not a valid config name; skipped")
+            continue
+        setattr(config, key, value)
+# ***   END OF CONFIGURATION   *************************************************** #
+
+
+# ***   DATABASE HELPERS   ********************************************************** #
 AudioFile = namedtuple("AudioFile", "id name mimetype parent size md5checksum")
 AudioMeta = namedtuple("AudioMeta", "id title artist album album_artist date year genre duration")
 Folder    = namedtuple("Folder",    "id name parent fullpath")
 
-def _initialized()-> bool:
+def _database_exists()-> bool:
     return os.path.isfile(config.dbfile)
 
 def _get_sql(query: str, header: bool=False):
@@ -63,7 +84,7 @@ def _validate_sql(query: str, value=None, values=None)-> tuple:
         return True, None
     except Exception as e:
         return False, e
-# ***   END OF DATABASE HELPERS ***************************************************** #
+# ***   END OF DATABASE HELPERS   *************************************************** #
 
 
 # ***   GOOGLE DRIVE HELPERS   ****************************************************** #
@@ -329,9 +350,10 @@ def init_database():
 
 
 def play_audio(filter: str=None, repeat: bool=False):
-    if not _initialized():
-        print("Database not initialized. Run 'gdriveaudio update -U' first")
+    if not _database_exists():
+        print("Database '%s' file not found. Run 'gdriveaudio update -U' first" % config.dbfile)
         return
+
     q = "SELECT id, name, prefix FROM audio"
     if filter is not None:
         q += " WHERE {}".format(filter)
@@ -358,6 +380,9 @@ def play_audio(filter: str=None, repeat: bool=False):
             break
 
 def show_data(n: int=None, filter: str=None):
+    if not _database_exists():
+        print("Database '%s' file not found. Run 'gdriveaudio update -U' first" % config.dbfile)
+        return
     q = "SELECT * FROM audio"
     if filter is not None:
         q += " WHERE {}".format(filter)
@@ -372,7 +397,7 @@ def show_data(n: int=None, filter: str=None):
         writer.writerow(row)
 
 def update_audio_data(files: bool=False, meta: bool=False, replace_meta: bool=False, folders: bool=False):
-    if not _initialized():
+    if not _database_exists():
         print("Initializing database")
         init_database()
     if files:
@@ -423,21 +448,27 @@ def _update_folders():
 def main():
     parser = ArgumentParser(description="Play music files in google drive")
     subparsers = parser.add_subparsers(dest="command")
-    
+
     parent_parser = ArgumentParser(add_help=False)
-    parent_parser.add_argument("-c", "--credential-json", type=str, default="_credentials.json",
-                               help="Path to the google cloud credential JSON file with google drive permission")
-    parent_parser.add_argument("-d", "--database-file", type=str, default="_gdriveplayer.db",
-                               help="Path to the sqlite database file")
-    
+    parent_parser.add_argument("-D", "--workdir", type=str, default=None,
+                               help=("Directory name of the project files (_credentials.json and _gdriveaudio.db"
+                                    ". Deafult: 'GDRIVEAUDIO_DIRECTORY' environment variable, if given"
+                                    ".          Otherwise the current directory"))
+    parent_parser.add_argument("-c", "--credential-json", type=str, default=None,
+                               help="Override the path to the google cloud credential JSON file with google drive permission")
+    parent_parser.add_argument("-d", "--database-file", type=str, default=None,
+                               help="Override the path to the sqlite database file")
+
     init = subparsers.add_parser("init", parents=[parent_parser],
                                  help="Initialize database (all existing data will be deleted)")
-     
+
     update = subparsers.add_parser("update", help="Update data", parents=[parent_parser])
     update.add_argument("-U", "--update-filelist", action="store_true", help="Update file list")
     update.add_argument("-M", "--update-meta", action="store_true", help="Update audio metadata")
     update.add_argument("-F", "--update-folders", action="store_true", help="Update folder structure data")
     update.add_argument("--replace-meta", action="store_true", help="Replace existing metadata")
+    update.add_argument("--metadata-encoding", type=str, default="utf8", help="Default encoding for audio metadata")
+    update.add_argument("--chardet-threshold", type=float, default=0.95, help="Threshold to trust the chardet result")
 
     play = subparsers.add_parser("play", help="Play audio", parents=[parent_parser])
     play.add_argument("-q", "--filter-query", type=str, default=None, help="SQL query to select files to play")
@@ -448,13 +479,23 @@ def main():
     data.add_argument("-q", "--filter-query", type=str, default=None, help="SQL query to select files to show")
 
     args = parser.parse_args()
-    #print(args)
-    config.credentialjson = os.path.abspath(args.credential_json)
-    config.dbfile = os.path.abspath(args.database_file)
+
+    # Credentials and database file locations
+    # 1. If '--credential-json' or '--database-file' is given, use these values
+    # 2. If '--workdir' is given, then use '{workdir}/_credentials.json' and '{workdir}/_gdriveaudio.db'
+    # 3. Use '_credentials.json' and '_gdriveaudio.db' in the currenct directory
+    if args.workdir is not None:
+        _set_config(credentialjson=os.path.join(args.workdir, "_credentials.json"),
+                    dbfile=os.path.join(args.workdir, "_gdriveaudio.db"))
+    if args.credential_json is not None:
+        _set_config(credentialjson=args.credential_json)
+    if args.database_file is not None:
+        _set_config(dbfile=args.database_file)
 
     if args.command == "init":
         init_database()
     elif args.command == "update":
+        _set_config(encoding=args.metadata_encoding, chardet_threshold=args.chardet_threshold)
         update_audio_data(files=args.update_filelist, meta=args.update_meta,
                           replace_meta=args.replace_meta, folders=args.update_folders)
     elif args.command == "play":

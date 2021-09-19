@@ -60,7 +60,10 @@ $ pip3 install -U ./gdriveaudio
 
 ## Start playing
 
-Run the commands in the folder that has the "_credentials.json":
+For the program to locate the credential file, either
+- Run the commands in the folder that has the "_credentials.json"
+- Set `GDRIVEAUDIO_DIRECTORY` environment variable as the directory containing "_credentials.json", or
+- Run the commands with `--workdir={directory}` option to specify the directory containing "_credentials.json"
 
 ```shell
 # Initialize data
@@ -84,6 +87,10 @@ $ gdriveaudio play -q "lower(prefix) like '%beethoven%'"
 
 # Show data
 $ gdriveaudio data -n 5 -q "lower(prefix) like '%jason%'"
+
+# See full command options
+$ gdriveaudio -h
+$ gdriveaudio {init,update,play,data} -h
 ```
 
 The audio player can be controled by key strokes (See full description at `man mplayer`):
