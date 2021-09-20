@@ -26,6 +26,8 @@ class config:
     dbfile: str = None
     encoding: str = "utf8"
     chardet_threshold: float = 0.95
+    mplayer = "mplayer"
+    ffprobe = "ffprobe"
 
 def _set_default_config():
     # 1. Use GDRIVEAUDIO_DIRECTORY env variable as the project root
@@ -261,7 +263,7 @@ def _guess_encoding(x: bytes)-> str:
     return enc
 
 def _get_audiometa(filepath: str)-> dict:
-    command = ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", filepath]
+    command = [config.ffprobe, "-v", "quiet", "-print_format", "json", "-show_format", filepath]
     p = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     x = p.stdout
     enc = _guess_encoding(x)
@@ -292,8 +294,24 @@ def _get_audiometa(filepath: str)-> dict:
     return out
 
 def _play_audiofile(filepath: str):
-    command = ["mplayer", "-vo", "null", filepath]
+    command = [config.mplayer, "-vo", "null", filepath]
     p = subprocess.run(command)
+
+def _check_mplayer():
+    return _check_command([config.mplayer, "--help"])
+
+def _check_ffprobe():
+    return _check_command([config.ffprobe, "-version"])
+
+def _check_command(command: list)-> bool:
+    #print(command)
+    try:
+        p = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        #print(p)
+    except Exception as e:
+        raise ValueError("'%s' does not seem a valid command; '%s' failed with error:: %s" % (
+            config.ffprobe, " ".join(command), e))
+    return True
 # ***   END OF PLAYER HELPERS   ******************************************************* #
 
 
@@ -350,6 +368,7 @@ def init_database():
 
 
 def play_audio(filter: str=None, repeat: bool=False):
+    _check_mplayer()
     if not _database_exists():
         print("Database '%s' file not found. Run 'gdriveaudio update -U' first" % config.dbfile)
         return
@@ -417,11 +436,15 @@ def _update_audiofiles():
     _exec_sql(q, values=tqdm(search_audio_files()))
 
 def _update_audiometa(replace: bool = False):
+    _check_ffprobe()
     if replace:
         q = "SELECT id, name FROM audiofiles"
     else:
         q = "SELECT id, name FROM audiofiles WHERE id NOT IN (SELECT id FROM audiometa)"    
     files = [(row[0], row[1]) for row in _get_sql(q)]
+    if len(files)==0:
+        print("No audio files found to update the meta data")
+        return
     ids, names = zip(*files)
     total = len(ids)
     placeholder = ",".join("?" * len(AudioMeta._fields))
@@ -469,10 +492,12 @@ def main():
     update.add_argument("--replace-meta", action="store_true", help="Replace existing metadata")
     update.add_argument("--metadata-encoding", type=str, default="utf8", help="Default encoding for audio metadata")
     update.add_argument("--chardet-threshold", type=float, default=0.95, help="Threshold to trust the chardet result")
+    update.add_argument("--ffprobe", type=str, default="ffprobe", help="ffprobe command name")
 
     play = subparsers.add_parser("play", help="Play audio", parents=[parent_parser])
     play.add_argument("-q", "--filter-query", type=str, default=None, help="SQL query to select files to play")
     play.add_argument("--repeat", action="store_true", help="Repeat forever")
+    play.add_argument("--mplayer", type=str, default="mplayer", help="mplayer command name")
 
     data = subparsers.add_parser("data", help="Show data in csv format", parents=[parent_parser])
     data.add_argument("-n", type=int, default=None, help="Number of rows to show")
@@ -500,10 +525,11 @@ def main():
     if args.command == "init":
         init_database()
     elif args.command == "update":
-        _set_config(encoding=args.metadata_encoding, chardet_threshold=args.chardet_threshold)
+        _set_config(encoding=args.metadata_encoding, chardet_threshold=args.chardet_threshold, ffprobe=args.ffprobe)
         update_audio_data(files=args.update_filelist, meta=args.update_meta,
                           replace_meta=args.replace_meta, folders=args.update_folders)
     elif args.command == "play":
+        _set_config(mplayer=args.mplayer)
         play_audio(filter=args.filter_query, repeat=args.repeat)
     elif args.command == "data":
         show_data(n=args.n, filter=args.filter_query)
