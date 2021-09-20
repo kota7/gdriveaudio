@@ -2,6 +2,7 @@
 
 import os
 from setuptools import setup
+from gdriveaudio import __version__
 
 readmefile = os.path.join(os.path.dirname(__file__), "README.md")
 with open(readmefile) as f:
@@ -9,7 +10,7 @@ with open(readmefile) as f:
 
 setup(
     name='gdriveaudio',
-    version='0.1.7',
+    version=__version__,
     description='Play music files on Google Drive',
     author='Kota Mori', 
     author_email='kmori05@gmail.com',

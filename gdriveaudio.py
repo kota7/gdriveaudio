@@ -19,6 +19,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2.service_account import Credentials
 
+__version__ = "0.1.8"
 
 # ***   CONFIGURATION   ********************************************************** #
 class config:
@@ -374,7 +375,7 @@ def _compile_keyword(keyword, case_sensitive=False):
     # field-specifig search
     r = re.search(r"([^:]+):(.*)", keyword)
     if r is not None:
-        print(r.groups())
+        #print(r.groups())
         field, word = r.group(1), r.group(2)
         if field not in textcols:
             warnings.warn("'%s' is not a valid field name thus ignored (must be one of %s)" % (field, textcols))
@@ -445,7 +446,7 @@ def show_data(n: int=None, columns: list=None, filter: str=None):
         for c in columns:
             assert c in audio_cols, "'%s' is not a valid column name, must be one of %s" % (c, audio_cols)
         q = "SELECT {} FROM audio".format(",".join('"%s"' % c for c in columns))
-    print(q)
+    #print(q)
     if filter is not None:
         q += " WHERE {}".format(filter)
     if n is not None:
