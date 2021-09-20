@@ -359,12 +359,44 @@ def init_database():
     SELECT
       a.*,
       f.name AS folder, f.fullpath || '/' AS prefix,
-      m.title, m.artist, m.album_artist, m.date, m.year, m.duration
+      m.title, m.artist, m.album, m.album_artist, m.genre, m.date, m.year, m.duration
     FROM
       audiofiles AS a
       LEFT JOIN audiometa AS m ON a.id = m.id
       LEFT JOIN folders   AS f ON a.parent = f.id
     """)
+
+def _compile_keyword(keyword, case_sensitive=False):
+    textcols = ("id", "name", "parent", "mimetype", "folder", "prefix",
+                "title", "artist", "album", "album_artist", "date", "genre")
+    # field-specifig search
+    r = re.search(r"([^:]+):(.*)", keyword)
+    if r is not None:
+        field, word = r.group(1), r.group(2)
+        if field not in textcols:
+            warnings.warn("'%s' is not a valid field name thus ignored (must be one of %s)" % (field, textcols))
+        else:
+            if case_sensitive:
+                return "{} GLOB '*{}*'".format(field, word)
+            else:
+                return "{} LIKE '%{}%'".format(field, word)
+    # search over all fields
+    if case_sensitive:
+        return " OR ".join("{} GLOB '*{}*'".format(field, keyword) for field in textcols)
+    else:
+        return " OR ".join("{} LIKE '%{}%'".format(field, keyword) for field in textcols)
+
+def _compile_filter(query: str=None, keywords :list=None, keywords_case_sensitive: list=None):
+    filters = []
+    if query is not None:
+        filters.append(query)    
+    if keywords is not None:
+        for k in keywords:
+            filters.append(_compile_keyword(k, False))
+    if keywords_case_sensitive is not None:
+        for k in keywords_case_sensitive:
+            filters.append(_compile_keyword(k, True))
+    return " AND ".join("(%s)" % f for f in filters) if len(filters) > 0 else None
 
 
 def play_audio(filter: str=None, repeat: bool=False):
@@ -494,14 +526,19 @@ def main():
     update.add_argument("--chardet-threshold", type=float, default=0.95, help="Threshold to trust the chardet result")
     update.add_argument("--ffprobe", type=str, default="ffprobe", help="ffprobe command name")
 
-    play = subparsers.add_parser("play", help="Play audio", parents=[parent_parser])
-    play.add_argument("-q", "--filter-query", type=str, default=None, help="SQL query to select files to play")
+    search = ArgumentParser(add_help=False)
+    search.add_argument("-k", "--keyword", type=str, nargs="*",
+                        help="keyword(s) to search, case-insensitive (name:word form to search in a specific field)")
+    search.add_argument("-K", "--keyword-case-sensitive", type=str, nargs="*",
+                        help="keyword(s) to search, case-sensitive (name:word form to search in a specific field)")
+    search.add_argument("-q", "--filter-query", type=str, default=None, help="SQL query to select files to show")
+
+    play = subparsers.add_parser("play", help="Play audio", parents=[search, parent_parser])
     play.add_argument("--repeat", action="store_true", help="Repeat forever")
     play.add_argument("--mplayer", type=str, default="mplayer", help="mplayer command name")
 
-    data = subparsers.add_parser("data", help="Show data in csv format", parents=[parent_parser])
+    data = subparsers.add_parser("data", help="Show data in csv format", parents=[search, parent_parser])
     data.add_argument("-n", type=int, default=None, help="Number of rows to show")
-    data.add_argument("-q", "--filter-query", type=str, default=None, help="SQL query to select files to show")
 
     args = parser.parse_args()
     #print(args)
@@ -530,9 +567,11 @@ def main():
                           replace_meta=args.replace_meta, folders=args.update_folders)
     elif args.command == "play":
         _set_config(mplayer=args.mplayer)
-        play_audio(filter=args.filter_query, repeat=args.repeat)
+        filter = _compile_filter(query=args.filter_query, keywords=args.keyword, keywords_case_sensitive=args.keyword_case_sensitive)
+        play_audio(filter=filter, repeat=args.repeat)
     elif args.command == "data":
-        show_data(n=args.n, filter=args.filter_query)
+        filter = _compile_filter(query=args.filter_query, keywords=args.keyword, keywords_case_sensitive=args.keyword_case_sensitive)
+        show_data(n=args.n, filter=filter)
 # ***   END OF MAIN PROCEDURE   ******************************************************* #
 
 
