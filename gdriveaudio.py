@@ -479,6 +479,11 @@ def main():
     data.add_argument("-q", "--filter-query", type=str, default=None, help="SQL query to select files to show")
 
     args = parser.parse_args()
+    #print(args)
+    if args.command is None:
+        # called without subcommand, show help and finish
+        parser.print_help()
+        return
 
     # Credentials and database file locations
     # 1. If '--credential-json' or '--database-file' is given, use these values

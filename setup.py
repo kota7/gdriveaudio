@@ -9,7 +9,7 @@ with open(readmefile) as f:
 
 setup(
     name='gdriveaudio',
-    version='0.1.5',
+    version='0.1.6',
     description='Play music files on Google Drive',
     author='Kota Mori', 
     author_email='kmori05@gmail.com',
