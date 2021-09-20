@@ -82,11 +82,18 @@ $ gdriveaudio update -UFM
 # Play all files
 $ gdriveaudio play 
 # Play files with some condition
-#   -q: takes 'WHERE' condition for SQLite
-$ gdriveaudio play -q "lower(prefix) like '%beethoven%'"
+#   -k: case-insensitive keywords to search
+#   -K: case-sensitive keywords to search
+#   -q: Query inside 'WHERE' condition (follow SQLite dialect)
+$ gdriveaudio play -k "beethoven"
+$ gdriveaudio play -K "Michael J"       # case sensitive search
+$ gdriveaudio play -k "name:lucky"      # search only inside 'name' field
+$ gdriveaudio play -q "duration > 600"  # 10+ min only
 
 # Show data
-$ gdriveaudio data -n 5 -q "lower(prefix) like '%jason%'"
+# -k, -K, -q filters also work
+$ gdriveaudio data -n 5
+$ gdriveaudio data -n 10 -k "beethoven"
 
 # See full command options
 $ gdriveaudio -h

@@ -367,11 +367,14 @@ def init_database():
     """)
 
 def _compile_keyword(keyword, case_sensitive=False):
-    textcols = ("id", "name", "parent", "mimetype", "folder", "prefix",
-                "title", "artist", "album", "album_artist", "date", "genre")
+    q = """SELECT name FROM pragma_table_info('audio') WHERE type LIKE 'TEXT'"""
+    textcols = [row[0] for row in _get_sql(q)]
+    textcols = [t for t in textcols if t not in ("md5checksum",)]  # disallow search on these columns
+    #print(textcols)
     # field-specifig search
     r = re.search(r"([^:]+):(.*)", keyword)
     if r is not None:
+        print(r.groups())
         field, word = r.group(1), r.group(2)
         if field not in textcols:
             warnings.warn("'%s' is not a valid field name thus ignored (must be one of %s)" % (field, textcols))
@@ -430,11 +433,17 @@ def play_audio(filter: str=None, repeat: bool=False):
             print("Finished playing all files")
             break
 
-def show_data(n: int=None, filter: str=None):
+def show_data(n: int=None, columns: list=None, filter: str=None):
     if not _database_exists():
         print("Database '%s' file not found. Run 'gdriveaudio update -U' first" % config.dbfile)
         return
-    q = "SELECT * FROM audio"
+    q = """SELECT name FROM pragma_table_info('audio')"""
+    audio_cols = set([row[0] for row in _get_sql(q, header=True)])
+    for c in columns:
+        assert c in audio_cols, "'%s' is not a valid column name, must be one of %s" % (c, audio_cols)
+
+    q = "SELECT {} FROM audio".format("*" if columns is None else ",".join('"%s"' % c for c in columns))
+    print(q)
     if filter is not None:
         q += " WHERE {}".format(filter)
     if n is not None:
@@ -539,6 +548,7 @@ def main():
 
     data = subparsers.add_parser("data", help="Show data in csv format", parents=[search, parent_parser])
     data.add_argument("-n", type=int, default=None, help="Number of rows to show")
+    data.add_argument("--columns", type=str, nargs="+", help="Columns to show")
 
     args = parser.parse_args()
     #print(args)
@@ -571,7 +581,7 @@ def main():
         play_audio(filter=filter, repeat=args.repeat)
     elif args.command == "data":
         filter = _compile_filter(query=args.filter_query, keywords=args.keyword, keywords_case_sensitive=args.keyword_case_sensitive)
-        show_data(n=args.n, filter=filter)
+        show_data(n=args.n, columns=args.columns, filter=filter)
 # ***   END OF MAIN PROCEDURE   ******************************************************* #
 
 
