@@ -439,10 +439,12 @@ def show_data(n: int=None, columns: list=None, filter: str=None):
         return
     q = """SELECT name FROM pragma_table_info('audio')"""
     audio_cols = set([row[0] for row in _get_sql(q, header=True)])
-    for c in columns:
-        assert c in audio_cols, "'%s' is not a valid column name, must be one of %s" % (c, audio_cols)
-
-    q = "SELECT {} FROM audio".format("*" if columns is None else ",".join('"%s"' % c for c in columns))
+    if columns is None:
+        q = "SELECT * FROM audio"
+    else:
+        for c in columns:
+            assert c in audio_cols, "'%s' is not a valid column name, must be one of %s" % (c, audio_cols)
+        q = "SELECT {} FROM audio".format(",".join('"%s"' % c for c in columns))
     print(q)
     if filter is not None:
         q += " WHERE {}".format(filter)
