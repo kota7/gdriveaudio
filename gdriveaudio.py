@@ -19,7 +19,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2.service_account import Credentials
 
-__version__ = "0.1.8"
+__version__ = "0.1.9"
 
 # ***   CONFIGURATION   ********************************************************** #
 class config:
@@ -368,9 +368,11 @@ def init_database():
     """)
 
 def _compile_keyword(keyword, case_sensitive=False):
-    q = """SELECT name FROM pragma_table_info('audio') WHERE type LIKE 'TEXT'"""
-    textcols = [row[0] for row in _get_sql(q)]
-    textcols = [t for t in textcols if t not in ("md5checksum",)]  # disallow search on these columns
+    #q = """SELECT name FROM pragma_table_info('audio') WHERE type LIKE 'TEXT'"""
+    #textcols = [row[0] for row in _get_sql(q)]
+    #textcols = [t for t in textcols if t not in ("md5checksum",)]  # disallow search on these columns
+    # note: pragrma_table_info does not specify types for computed colums
+    textcols = ["id", "name", "mimetype", "parent", "folder", "prefix", "title", "artist", "album_artist", "date"]
     #print(textcols)
     # field-specifig search
     r = re.search(r"([^:]+):(.*)", keyword)
