@@ -19,7 +19,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2.service_account import Credentials
 
-__version__ = "0.1.9"
+__version__ = "0.1.10"
 
 # ***   CONFIGURATION   ********************************************************** #
 class config:
@@ -200,8 +200,8 @@ def _add_fullpath(folders: list, sep="/"):
             return out[id]["fullpath"]
         if out[id]["parent"] not in out:
             # this id has no parent in the list
-            # so this is a top folder, i.e. fullpath = name
-            out[id]["fullpath"] = out[id]["name"]
+            # so this is a top folder, i.e. fullpath = /name
+            out[id]["fullpath"] = sep + out[id]["name"]
             return out[id]["fullpath"]
         out[id]["fullpath"] = _fullpath(out[id]["parent"]) + sep + out[id]["name"]
         return out[id]["fullpath"]
