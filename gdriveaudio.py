@@ -19,7 +19,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2.service_account import Credentials
 
-__version__ = "0.1.10"
+__version__ = "0.1.11"
 
 # ***   CONFIGURATION   ********************************************************** #
 class config:
@@ -54,7 +54,7 @@ def _set_config(**kwargs):
 
 # ***   DATABASE HELPERS   ********************************************************** #
 AudioFile = namedtuple("AudioFile", "id name mimetype parent size md5checksum")
-AudioMeta = namedtuple("AudioMeta", "id title artist album album_artist date year genre duration")
+AudioMeta = namedtuple("AudioMeta", "id title artist album album_artist track date year genre duration")
 Folder    = namedtuple("Folder",    "id name parent fullpath")
 
 def _database_exists()-> bool:
@@ -280,6 +280,7 @@ def _get_audiometa(filepath: str)-> dict:
       ,"artist": tags.get("artist")
       ,"album": tags.get("album")
       ,"album_artist": tags.get("album_artist")
+      ,"track": tags.get("track")
       ,"date": tags.get("date")
       ,"year": tags.get("year")
       ,"genre": tags.get("genre")
@@ -289,6 +290,12 @@ def _get_audiometa(filepath: str)-> dict:
         r = re.match(r"\d{4}", out["date"])
         if r is not None:
             out["year"] = r.group(0)
+    if out["track"] is not None:
+        # convert to int if the value consits of digits
+        # note there are some tracks with non-numeric values like '1/4', 'Disk1-1'
+        r = re.match(r"\d+$", out["track"])
+        if r is not None:
+            out["track"] = int(out["track"])
     # numeric value validation
     out["year"] = _validate_integer(out["year"])
     out["duration"] = _validate_numeric(out["duration"])
@@ -332,6 +339,9 @@ def init_database():
     )
     """)
 
+    # note on tracks.
+    # we set the type of track as integer
+    # if non-numeric value is inserted, SQLite store that as text
     _exec_sql("""
     CREATE TABLE IF NOT EXISTS audiometa (
          id            TEXT UNIQUE PRIMARY KEY
@@ -339,6 +349,7 @@ def init_database():
         ,artist        TEXT
         ,album         TEXT
         ,album_artist  TEXT
+        ,track         INTEGER
         ,date          TEXT
         ,year          INTETER
         ,genre         TEXT
@@ -360,7 +371,7 @@ def init_database():
     SELECT
       a.*,
       f.name AS folder, f.fullpath || '/' AS prefix,
-      m.title, m.artist, m.album, m.album_artist, m.genre, m.date, m.year, m.duration
+      m.title, m.artist, m.album, m.album_artist, m.track, m.genre, m.date, m.year, m.duration
     FROM
       audiofiles AS a
       LEFT JOIN audiometa AS m ON a.id = m.id
@@ -405,7 +416,7 @@ def _compile_filter(query: str=None, keywords :list=None, keywords_case_sensitiv
     return " AND ".join("(%s)" % f for f in filters) if len(filters) > 0 else None
 
 
-def play_audio(filter: str=None, repeat: bool=False):
+def play_audio(filter: str=None, repeat: bool=False, sort: list=None):
     _check_mplayer()
     if not _database_exists():
         print("Database '%s' file not found. Run 'gdriveaudio update -U' first" % config.dbfile)
@@ -414,7 +425,19 @@ def play_audio(filter: str=None, repeat: bool=False):
     q = "SELECT id, name, prefix FROM audio"
     if filter is not None:
         q += " WHERE {}".format(filter)
-    q += " ORDER BY random()"
+    if sort is not None:
+        audio_cols = set([row[0] for row in _get_sql("SELECT name FROM pragma_table_info('audio')", header=True)])
+        tmp = []
+        for c in sort:
+            r = re.match(r"(\-{0,1})(.+)", c)
+            assert r is not None, ("Failed to interpret sort column '%s'" % c)
+            direc = "DESK" if r.group(1)=="-" else "ASC"
+            name = r.group(2)
+            assert name in audio_cols, "'%s' is not a valid column name, must be one of %s" % (name, audio_cols)
+            tmp.append("%s %s" % (name, direc))
+        q += " ORDER BY %s" % ",".join(tmp)
+    else:
+        q += " ORDER BY random()"
     flag, e = _validate_sql(q)
     if not flag:
         raise ValueError("Query is invalid:\n'{}'\nError:\n'{}'".format(q, e))
@@ -436,12 +459,12 @@ def play_audio(filter: str=None, repeat: bool=False):
             print("Finished playing all files")
             break
 
-def show_data(n: int=None, columns: list=None, filter: str=None):
+def show_data(n: int=None, columns: list=None, filter: str=None, sort: list=None,
+              format: str="csv", json_ascii: bool=False, json_indent: int=None):
     if not _database_exists():
         print("Database '%s' file not found. Run 'gdriveaudio update -U' first" % config.dbfile)
         return
-    q = """SELECT name FROM pragma_table_info('audio')"""
-    audio_cols = set([row[0] for row in _get_sql(q, header=True)])
+    audio_cols = set([row[0] for row in _get_sql("SELECT name FROM pragma_table_info('audio')", header=True)])
     if columns is None:
         q = "SELECT * FROM audio"
     else:
@@ -451,15 +474,33 @@ def show_data(n: int=None, columns: list=None, filter: str=None):
     #print(q)
     if filter is not None:
         q += " WHERE {}".format(filter)
+    if sort is not None:
+        tmp = []
+        for c in sort:
+            r = re.match(r"(\-{0,1})(.+)", c)
+            assert r is not None, ("Failed to interpret sort column '%s'" % c)
+            direc = "DESK" if r.group(1)=="-" else "ASC"
+            name = r.group(2)
+            assert name in audio_cols, "'%s' is not a valid column name, must be one of %s" % (name, audio_cols)
+            tmp.append("%s %s" % (name, direc))
+        q += " ORDER BY %s" % ",".join(tmp)
     if n is not None:
         q += " LIMIT {}".format(n)
     flag, e = _validate_sql(q)
     if not flag:
         raise ValueError("Query is invalid:\n'{}'\nError:\n'{}'".format(q, e))
-    rows = _get_sql(q, header=True)
-    writer = csv.writer(sys.stdout)
-    for row in rows:
-        writer.writerow(row)
+    assert format in ("csv", "json")
+    if format == "csv":
+        rows = _get_sql(q, header=True)
+        writer = csv.writer(sys.stdout)
+        for row in rows:
+            writer.writerow(row)
+    elif format == "json":
+        rows = _get_sql(q, header=True)
+        header = next(rows)
+        obj = [dict(zip(header, row)) for row in rows]
+        json.dump(obj, sys.stdout, ensure_ascii=json_ascii, indent=json_indent)
+
 
 def update_audio_data(files: bool=False, meta: bool=False, replace_meta: bool=False, folders: bool=False):
     if not _database_exists():
@@ -546,6 +587,7 @@ def main():
     search.add_argument("-K", "--keyword-case-sensitive", type=str, nargs="*",
                         help="keyword(s) to search, case-sensitive (name:word form to search in a specific field)")
     search.add_argument("-q", "--filter-query", type=str, default=None, help="SQL query to select files to show")
+    search.add_argument("-s", "--sort", type=str, nargs="*", help="Sort by columns")
 
     play = subparsers.add_parser("play", help="Play audio", parents=[search, parent_parser])
     play.add_argument("--repeat", action="store_true", help="Repeat forever")
@@ -554,6 +596,9 @@ def main():
     data = subparsers.add_parser("data", help="Show data in csv format", parents=[search, parent_parser])
     data.add_argument("-n", type=int, default=None, help="Number of rows to show")
     data.add_argument("--columns", type=str, nargs="+", help="Columns to show")
+    data.add_argument("-f", "--format", type=str, default="csv", choices=("csv", "json"), help="Output format")
+    data.add_argument("--json-ascii", action="store_true", help="JSON output is shown with ascii characters")
+    data.add_argument("--json-indent", type=int, help="JSON output is indented with spaces")
 
     args = parser.parse_args()
     #print(args)
@@ -583,10 +628,11 @@ def main():
     elif args.command == "play":
         _set_config(mplayer=args.mplayer)
         filter = _compile_filter(query=args.filter_query, keywords=args.keyword, keywords_case_sensitive=args.keyword_case_sensitive)
-        play_audio(filter=filter, repeat=args.repeat)
+        play_audio(filter=filter, repeat=args.repeat, sort=args.sort)
     elif args.command == "data":
         filter = _compile_filter(query=args.filter_query, keywords=args.keyword, keywords_case_sensitive=args.keyword_case_sensitive)
-        show_data(n=args.n, columns=args.columns, filter=filter)
+        show_data(n=args.n, columns=args.columns, filter=filter, sort=args.sort,
+                  format=args.format, json_ascii=args.json_ascii, json_indent=args.json_indent)
 # ***   END OF MAIN PROCEDURE   ******************************************************* #
 
 
