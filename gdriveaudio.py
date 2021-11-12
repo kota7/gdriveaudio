@@ -19,7 +19,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 from google.oauth2.service_account import Credentials
 
-__version__ = "0.1.11"
+__version__ = "0.1.12"
 
 # ***   CONFIGURATION   ********************************************************** #
 class config:
@@ -417,32 +417,48 @@ def _compile_filter(query: str=None, keywords :list=None, keywords_case_sensitiv
             filters.append(_compile_keyword(k, True))
     return " AND ".join("(%s)" % f for f in filters) if len(filters) > 0 else None
 
-
-def play_audio(filter: str=None, repeat: bool=False, sort: list=None):
-    _check_mplayer()
-    if not _database_exists():
-        print("Database '%s' file not found. Run 'gdriveaudio update -U' first" % config.dbfile)
-        return
-
-    q = "SELECT id, name, prefix FROM audio"
-    if filter is not None:
-        q += " WHERE {}".format(filter)
+def _tables_and_orderby(shuffle: list=None, sort: list=None)-> tuple:
+    # returns (tables, orderby) queries
+    # used by show_data and play functions
+    audio_cols = set([row[0] for row in _get_sql("SELECT name FROM pragma_table_info('audio')", header=True)])
+    tables = ["audio AS a"]
+    orderby = []
+    if shuffle is not None:
+        for c in shuffle:
+            assert c in audio_cols, "'%s' is not a valid column name, must be one of %s" % (c, audio_cols)
+            tables.append("""INNER JOIN (SELECT "{c}", random() AS random_{c} FROM audio GROUP BY 1) USING({c})""".format(c=c))
+            orderby.append("random_{}".format(c))
     if sort is not None:
-        audio_cols = set([row[0] for row in _get_sql("SELECT name FROM pragma_table_info('audio')", header=True)])
-        tmp = []
         for c in sort:
             r = re.match(r"(\-{0,1})(.+)", c)
             assert r is not None, ("Failed to interpret sort column '%s'" % c)
             direc = "DESK" if r.group(1)=="-" else "ASC"
             name = r.group(2)
             assert name in audio_cols, "'%s' is not a valid column name, must be one of %s" % (name, audio_cols)
-            tmp.append("%s %s" % (name, direc))
-        q += " ORDER BY %s" % ",".join(tmp)
-    else:
-        q += " ORDER BY random()"
+            orderby.append("%s %s" % (name, direc))
+    orderby = "ORDER BY %s" % ",".join(orderby) if len(orderby) > 0 else ""
+    tables = " ".join(tables)
+    return tables, orderby
+
+def play_audio(filter: str=None, repeat: bool=False, shuffle: list=None, sort: list=None):
+    _check_mplayer()
+    if not _database_exists():
+        print("Database '%s' file not found. Run 'gdriveaudio update -U' first" % config.dbfile)
+        return
+
+    tables, orderby = _tables_and_orderby(shuffle=shuffle, sort=sort)
+    if orderby == "":
+        orderby = "ORDER BY random()"
+    columns = "id, name, prefix"
+    where = "WHERE {}".format(filter) if filter is not None else ""
+
+    q = "SELECT {columns} FROM {tables} {where} {orderby}".format(
+        columns=columns, tables=tables, where=where, orderby=orderby)
+    #print(q)
     flag, e = _validate_sql(q)
     if not flag:
         raise ValueError("Query is invalid:\n'{}'\nError:\n'{}'".format(q, e))
+
     while True:
         files = list(_get_sql(q))
         print("Found %d files" % len(files))
@@ -461,33 +477,28 @@ def play_audio(filter: str=None, repeat: bool=False, sort: list=None):
             print("Finished playing all files")
             break
 
-def show_data(n: int=None, columns: list=None, filter: str=None, sort: list=None,
+def show_data(n: int=None, columns: list=None, filter: str=None, 
+              shuffle: list=None, sort: list=None,
               format: str="csv", json_ascii: bool=False, json_indent: int=None):
     if not _database_exists():
         print("Database '%s' file not found. Run 'gdriveaudio update -U' first" % config.dbfile)
         return
     audio_cols = set([row[0] for row in _get_sql("SELECT name FROM pragma_table_info('audio')", header=True)])
+
     if columns is None:
-        q = "SELECT * FROM audio"
+        columns = "a.*" 
     else:
         for c in columns:
             assert c in audio_cols, "'%s' is not a valid column name, must be one of %s" % (c, audio_cols)
-        q = "SELECT {} FROM audio".format(",".join('"%s"' % c for c in columns))
+        columns = ",".join('a."%s"' % c for c in colmns)
+
+    tables, orderby = _tables_and_orderby(shuffle=shuffle, sort=sort)
+    where = "WHERE {}".format(filter) if filter is not None else ""
+    limit = "LIMIT {}".format(n) if n is not None else ""
+
+    q = "SELECT {columns} FROM {tables} {where} {orderby} {limit}".format(
+        columns=columns, tables=tables, where=where, orderby=orderby, limit=limit)
     #print(q)
-    if filter is not None:
-        q += " WHERE {}".format(filter)
-    if sort is not None:
-        tmp = []
-        for c in sort:
-            r = re.match(r"(\-{0,1})(.+)", c)
-            assert r is not None, ("Failed to interpret sort column '%s'" % c)
-            direc = "DESK" if r.group(1)=="-" else "ASC"
-            name = r.group(2)
-            assert name in audio_cols, "'%s' is not a valid column name, must be one of %s" % (name, audio_cols)
-            tmp.append("%s %s" % (name, direc))
-        q += " ORDER BY %s" % ",".join(tmp)
-    if n is not None:
-        q += " LIMIT {}".format(n)
     flag, e = _validate_sql(q)
     if not flag:
         raise ValueError("Query is invalid:\n'{}'\nError:\n'{}'".format(q, e))
@@ -502,7 +513,6 @@ def show_data(n: int=None, columns: list=None, filter: str=None, sort: list=None
         header = next(rows)
         obj = [dict(zip(header, row)) for row in rows]
         json.dump(obj, sys.stdout, ensure_ascii=json_ascii, indent=json_indent)
-
 
 def update_audio_data(files: bool=False, meta: bool=False, replace_meta: bool=False, folders: bool=False):
     if not _database_exists():
@@ -545,7 +555,6 @@ def _update_audiometa(replace: bool = False):
     q = "INSERT OR REPLACE INTO audiometa VALUES ({})".format(placeholder)
     _exec_sql(q, values=tqdm(_generate_audiometa_data(ids, names), total=total))
 
-
 def _update_audiometa_one(id: str, filepath: str):
     meta = _get_audiometa(filepath)
     meta = AudioMeta(id=id, **meta)
@@ -554,16 +563,14 @@ def _update_audiometa_one(id: str, filepath: str):
     q = "INSERT OR REPLACE INTO audiometa VALUES ({})".format(placeholder)
     _exec_sql(q, value=meta)
 
-
 def _update_folders():
     _exec_sql("DELETE FROM folders")
     placeholder = ",".join("?" * len(Folder._fields))
     q = "INSERT INTO folders VALUES ({})".format(placeholder)
     _exec_sql(q, values=tqdm(search_folders()))
 
-
 def main():
-    parser = ArgumentParser(description="Play music files in google drive")
+    parser = ArgumentParser(description=("Play music files in google drive (version %s)" % __version__))
     subparsers = parser.add_subparsers(dest="command")
 
     parent_parser = ArgumentParser(add_help=False)
@@ -594,7 +601,8 @@ def main():
     search.add_argument("-K", "--keyword-case-sensitive", type=str, nargs="*",
                         help="keyword(s) to search, case-sensitive (name:word form to search in a specific field)")
     search.add_argument("-q", "--filter-query", type=str, default=None, help="SQL query to select files to show")
-    search.add_argument("-s", "--sort", type=str, nargs="*", help="Sort by columns")
+    search.add_argument("-S", "--shuffle", type=str, nargs="+", help="Shuffle by the specified column(s)")
+    search.add_argument("-s", "--sort", type=str, nargs="+", help="Sort by the specified column(s)")
 
     play = subparsers.add_parser("play", help="Play audio", parents=[search, parent_parser])
     play.add_argument("--repeat", action="store_true", help="Repeat forever")
@@ -635,10 +643,10 @@ def main():
     elif args.command == "play":
         _set_config(mplayer=args.mplayer)
         filter = _compile_filter(query=args.filter_query, keywords=args.keyword, keywords_case_sensitive=args.keyword_case_sensitive)
-        play_audio(filter=filter, repeat=args.repeat, sort=args.sort)
+        play_audio(filter=filter, repeat=args.repeat, shuffle=args.shuffle, sort=args.sort)
     elif args.command == "data":
         filter = _compile_filter(query=args.filter_query, keywords=args.keyword, keywords_case_sensitive=args.keyword_case_sensitive)
-        show_data(n=args.n, columns=args.columns, filter=filter, sort=args.sort,
+        show_data(n=args.n, columns=args.columns, filter=filter,  shuffle=args.shuffle, sort=args.sort,
                   format=args.format, json_ascii=args.json_ascii, json_indent=args.json_indent)
 # ***   END OF MAIN PROCEDURE   ******************************************************* #
 
