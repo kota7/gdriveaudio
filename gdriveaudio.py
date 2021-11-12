@@ -69,7 +69,7 @@ def _get_sql(query: str, header: bool=False):
         for row in c:
             yield row
 
-def _exec_sql(query: str, value=None, values=None):
+def _exec_sql(query: str, value=None, values=None)-> int:
     assert value is None or values is None
     with sqlite3.connect(config.dbfile) as conn:
         c = conn.cursor()
@@ -80,6 +80,8 @@ def _exec_sql(query: str, value=None, values=None):
         else:
             c.execute(query)
         conn.commit()
+        # return the number of rows affected
+        return c.rowcount
 
 def _validate_sql(query: str, value=None, values=None)-> tuple:
     try:
@@ -524,6 +526,11 @@ def _update_audiofiles():
 
 def _update_audiometa(replace: bool = False):
     _check_ffprobe()
+    # delete metadata for the files that do not exist
+    q = "DELETE FROM audiometa WHERE id NOT IN (SELECT id FROM audiofiles)"
+    n = _exec_sql(q)
+    print("Audio metadata for non-existing ids are deleted (%d affected)" % n)
+
     if replace:
         q = "SELECT id, name FROM audiofiles"
     else:
