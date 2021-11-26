@@ -490,7 +490,7 @@ def show_data(n: int=None, columns: list=None, filter: str=None,
     else:
         for c in columns:
             assert c in audio_cols, "'%s' is not a valid column name, must be one of %s" % (c, audio_cols)
-        columns = ",".join('a."%s"' % c for c in colmns)
+        columns = ",".join('a."%s"' % c for c in columns)
 
     tables, orderby = _tables_and_orderby(shuffle=shuffle, sort=sort)
     where = "WHERE {}".format(filter) if filter is not None else ""
