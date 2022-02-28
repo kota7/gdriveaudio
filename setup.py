@@ -18,8 +18,8 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/kota7/gdriveaudio',
     
-    packages=[],
-    py_modules=['gdriveaudio'],
+    packages=['gdriveaudio'],
+    #py_modules=['gdriveaudio'],
     install_requires=['chardet', 'tqdm', 'google-api-python-client', 'google-auth-httplib2', 'google-auth-oauthlib'],
-    entry_points={'console_scripts': ['gdriveaudio=gdriveaudio:main']},
+    entry_points={'console_scripts': ['gdriveaudio=gdriveaudio.gdriveaudio:main']},
 )
